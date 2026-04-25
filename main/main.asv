@@ -27,6 +27,7 @@ toa = distances / speed;
 planner = waypointTrajectory(waypoints, toa, 'SampleRate', sim_sample_rate);
 
 % 3. 3D VISUALIZATION SETUP
+% Create a clean, large figure window for the 3D render
 % Create a 3D chase camera view attached to the ego vehicle
 chasePlot(egoVehicle, 'Centerline', 'on');
 
@@ -55,7 +56,7 @@ while advance(scenario)
     
     % Force the graphics engine to render the frame at a limited rate
     drawnow limitrate;
-    pause(0.02);
+    
 end
 
 disp('Baseline simulation finished.');
