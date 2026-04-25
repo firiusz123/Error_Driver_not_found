@@ -1,87 +1,97 @@
 function sensor_data = get_sensor_data(egoVehicle, radars_list, camera_sensor, sim_time)
     % =====================================================================
-    % FULL PERCEPTION MODULE (Fixed Output Indexing)
+    % PERCEPTION MODULE
+    % Returns a struct with:
+    %   .is_right_lane_safe   bool  no closing traffic in right-adjacent lane
+    %   .is_shoulder_detected bool  closest right boundary is Solid
+    %   .closest_threat_dist  m     distance to closest relevant threat
+    %   .lane_offsets         vec   lateral offsets (m) of every visible
+    %                               lane boundary, ego frame, ascending
     % =====================================================================
-    
+
     sensor_data = struct();
-    sensor_data.is_right_lane_safe = true;           
-    sensor_data.is_shoulder_detected = false; 
-    sensor_data.closest_threat_dist = inf;
+    sensor_data.is_right_lane_safe   = true;
+    sensor_data.is_shoulder_detected = false;
+    sensor_data.closest_threat_dist  = inf;
+    sensor_data.lane_offsets         = [];
 
     % ---------------------------------------------------------------------
-    % PART 1: CAMERA VISION (SHOULDER DETECTION)
+    % PART 1: CAMERA -- lane boundary geometry & shoulder-line detection
     % ---------------------------------------------------------------------
     if ~isempty(camera_sensor)
-        % Create ground truth for the camera (50m ahead)
-        ground_truth_lanes = laneBoundaries(egoVehicle, 'XDistance', linspace(0, 50, 51));
-        
-        % FIX: Camera in 'Lanes only' mode returns exactly 2 outputs:
-        % [detections, isValidTime]
-        [lane_dets, ~] = camera_sensor(ground_truth_lanes, sim_time);
-        
-        % Check how many lanes we ACTUALLY detected using length()
-        num_actual_lanes = length(lane_dets);
-        
+        ground_truth_lanes = laneBoundaries(egoVehicle, ...
+            'XDistance', linspace(0, 50, 51));
+
+        % visionDetectionGenerator in 'Lanes only' mode returns 3 outputs.
+        % env_sim.m line 56 confirms this signature.
+        [lane_dets, ~, ~] = camera_sensor(ground_truth_lanes, sim_time);
+
         right_line_offset = -inf;
-        right_line_type = 'Unmarked';
-        
-        for i = 1:num_actual_lanes
-            % Failsafe: check if the field exists before accessing
-            if isfield(lane_dets(i), 'LateralOffset') || isprop(lane_dets(i), 'LateralOffset')
-                offset = lane_dets(i).LateralOffset;
-                
-                % Find the closest line on the right side (negative Y)
-                if offset < 0 && offset > right_line_offset
-                    right_line_offset = offset;
-                    right_line_type = lane_dets(i).BoundaryType;
+        right_line_type   = 'Unmarked';
+        offsets = [];
+
+        for i = 1:length(lane_dets)
+            d = lane_dets(i);
+            if ~(isprop(d,'LateralOffset') || isfield(d,'LateralOffset'))
+                continue;
+            end
+            offset = d.LateralOffset;
+            offsets(end+1) = offset; %#ok<AGROW>
+
+            % Closest line on the right side (largest negative offset)
+            if offset < 0 && offset > right_line_offset
+                right_line_offset = offset;
+                if isprop(d,'BoundaryType') || isfield(d,'BoundaryType')
+                    right_line_type = char(d.BoundaryType);
                 end
             end
         end
-        
-        % If the closest right boundary is a solid line -> it's a shoulder
-        if strcmp(right_line_type, 'Solid')
-            sensor_data.is_shoulder_detected = true;
-        end
+
+        sensor_data.lane_offsets = sort(offsets, 'descend');
+        sensor_data.is_shoulder_detected = strcmp(right_line_type, 'Solid');
     end
 
     % ---------------------------------------------------------------------
-    % PART 2: RADARS (COLLISION & GAP ACCEPTANCE)
+    % PART 2: RADARS -- collision and gap acceptance
     % ---------------------------------------------------------------------
     targets = targetPoses(egoVehicle);
     if isempty(targets)
-        return; 
+        return;
     end
 
-    % Your Lane Specs: Ego is at Y=1.5. Right lane is at Y = [-2, 1.5]
-    right_lane_y_min = -3.5; % Adjusted for 3.5m lanes
-    right_lane_y_max = 0.5;  
-    safe_ttc_threshold = 4.0; 
-    critical_bubble_radius = 2.0; 
+    % Right-adjacent lane Y bounds (ego at Y=1.5, right lane Y in [-3.5, 0.5])
+    right_lane_y_min       = -3.5;
+    right_lane_y_max       =  0.5;
+    safe_ttc_threshold     =  4.0;
+    critical_bubble_radius =  2.0;
 
     for r = 1:length(radars_list)
         [detections, ~] = radars_list{r}(targets, sim_time);
-        numDets = length(detections);
+        % main.m passes radars in order {radar_RR, radar_RL, radar_R}.
+        % Only the first two are rear-facing — their X axis points astern,
+        % so the "X<0 && Vx>0 means approaching from behind" predicate
+        % is only meaningful for them.
+        % TODO: pass radar mounting metadata so we don't rely on list order.
+        is_rear = (r <= 2);
 
-        for i = 1:numDets
+        for i = 1:length(detections)
             meas = detections{i}.Measurement;
-            X = meas(1); Y = meas(2); Vx = meas(4); 
-            
-            % Euclidean distance for the 2m bubble
+            X = meas(1); Y = meas(2); Vx = meas(4);
+
             true_dist = sqrt(X^2 + Y^2);
             if true_dist < critical_bubble_radius
                 sensor_data.is_right_lane_safe = false;
                 if true_dist < sensor_data.closest_threat_dist
                     sensor_data.closest_threat_dist = true_dist;
                 end
-                continue; 
+                continue;
             end
-            
-            % Right lane check
-            if Y >= right_lane_y_min && Y <= right_lane_y_max
+
+            if is_rear && Y >= right_lane_y_min && Y <= right_lane_y_max
                 if abs(X) < sensor_data.closest_threat_dist
                     sensor_data.closest_threat_dist = abs(X);
                 end
-                if X < 0 && Vx > 0 % Dogania nas
+                if X < 0 && Vx > 0  % approaching from behind
                     ttc = abs(X) / Vx;
                     if ttc < safe_ttc_threshold
                         sensor_data.is_right_lane_safe = false;
