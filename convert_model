@@ -1,0 +1,37 @@
+% convert_model.m
+% Converts drowsiness_merged.onnx → drowsiness_net.mat
+% Run this ONCE before running VASC_simu_code.m
+%
+% Requirements:
+%   - Deep Learning Toolbox
+%   - Deep Learning Toolbox Converter for ONNX Model Format
+%   - drowsiness_merged.onnx must exist (run merge_model.py first)
+
+clear; clc;
+
+PROJECT_DIR = 'C:\Users\Flippy\Documents\AGH\VASC Hackathon';
+ONNX_PATH   = fullfile(PROJECT_DIR, 'drowsiness_merged.onnx');
+SAVE_PATH   = fullfile(PROJECT_DIR, 'drowsiness_net.mat');
+
+% ── Check merged file exists ──────────────────────────────────────────
+if ~isfile(ONNX_PATH)
+    error(['drowsiness_merged.onnx not found.\n' ...
+           'Run merge_model.py first:\n' ...
+           '  python merge_model.py\n']);
+end
+
+% ── Import ONNX → dlnetwork ───────────────────────────────────────────
+fprintf('Importing ONNX model (takes ~30-60 seconds)...\n');
+fprintf('File: %s\n\n', ONNX_PATH);
+
+net = importNetworkFromONNX(ONNX_PATH, ...
+    'InputDataFormats',  'BCSS', ...
+    'OutputDataFormats', 'BC');
+
+fprintf('\nImport successful.\n');
+summary(net);
+
+% ── Save as MATLAB format ─────────────────────────────────────────────
+save(SAVE_PATH, 'net');
+fprintf('\nSaved to: %s\n', SAVE_PATH);
+fprintf('\nYou can now run VASC_simu_code.m\n');
