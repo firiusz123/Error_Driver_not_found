@@ -76,7 +76,8 @@ incap_low_t   = 0;
 incap_state   = false;
 
 dms = dms_init();
-dms.enabled = false;  % set false to disable webcam/DMS and use scripted fallback
+% dms.enabled = false;  % set false to disable webcam/DMS and use scripted fallback
+fd  = face_detect_init();  % BlazeFace + MediaPipe EAR; shares frame from dms.last_frame
 % --- Visualization + keyboard driver-mock --------------------------------
 hFig = figure( ...
     'Name', 'ADAS Emergency Takeover', 'Color', 'w', ...
@@ -132,6 +133,8 @@ while advance(scenario)
 
     % --- DMS step: webcam capture + ViT inference (4 Hz, rate-limited) --
     dms = dms_step(dms, sim_time);
+    % --- Face detect step: BlazeFace + EAR (4 Hz, reuses dms.last_frame) --
+    fd  = face_detect_step(fd, dms.last_frame, sim_time);
 
     % --- DMS camera preview --------------------------------------------
     if ~isempty(hCamImg) && ishandle(hCamImg) && ~isempty(dms.last_frame)
@@ -139,17 +142,21 @@ while advance(scenario)
         set(hCamImg, 'CData', f);
         set(hCamAx, 'XLim', [0.5, size(f,2)+0.5], ...
                     'YLim', [0.5, size(f,1)+0.5]);
-        set(hCamTitle, 'String', sprintf('DMS  drowsy_p=%.2f  incap=%d', ...
-            dms.drowsy_p, incap_state));
+        set(hCamTitle, 'String', sprintf('DMS  drowsy_p=%.2f  ear_p=%.2f  incap=%d', ...
+            dms.drowsy_p, fd.ear_p, incap_state));
     end
 
-    % Schmitt-trigger hysteresis on drowsy_p → incap_state.
+    % Schmitt-trigger hysteresis on fused drowsiness signal → incap_state.
+    % fused_p = max(ViT drowsy_p, EAR-based ear_p): either signal alone is
+    % sufficient to drive incap_high_t. ear_p=0.5 (neutral) when no face
+    % detected, so the face detector never falsely suppresses incap recovery.
     % Deadband [DMS_LOW, DMS_HIGH] holds current state and resets timers.
     if dms.enabled
-        if dms.drowsy_p >= DMS_HIGH
+        fused_p = max(dms.drowsy_p, fd.ear_p);
+        if fused_p >= DMS_HIGH
             incap_high_t = incap_high_t + dt;
             incap_low_t  = 0;
-        elseif dms.drowsy_p <= DMS_LOW
+        elseif fused_p <= DMS_LOW
             incap_low_t  = incap_low_t + dt;
             incap_high_t = 0;
         else
