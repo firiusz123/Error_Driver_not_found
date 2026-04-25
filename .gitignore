@@ -1,3 +1,15 @@
+# Global model artifacts
+*.onnx
+*.onnx.data
+
+# Python cache
+__pycache__/
+/+drowsiness_matlab
+/+face_detector_merged
+/+face_landmark_detector_merged
+/MATTEST
+.codex
+/ML/+drowsiness_matlab
 *.onnx*
 +*
 .*
