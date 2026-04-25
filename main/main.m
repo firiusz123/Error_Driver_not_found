@@ -207,6 +207,37 @@ while advance(scenario)
                       ROAD_CLASS, sensor_data.is_right_lane_safe, ...
                       mrm_enable, fsm_out.state_id);
 
+    % --- Run the planner (active in MRM, EM, Fault — frozen elsewhere) --
+    mrm_enable = ismember(fsm_out.state_id, [4 5 6 7 8 9]);
+    [target_y, target_hdg, target_v, ~, planner_feasible_prev, arrived] = ...
+        planner_logic(ego_x, ego_y, ego_v, sensor_data.lane_offsets, ...
+                      ROAD_CLASS, sensor_data.is_right_lane_safe, ...
+                      mrm_enable, fsm_out.state_id);
+
+    % =====================================================================
+    % HACKATHON BYPASS: Force lane change if external planner fails
+    % =====================================================================
+    % Check if the FSM requests an emergency pullover (states 4, 5, or 6) 
+    % AND perception confirms the right lane is physically safe to enter.
+    if ismember(fsm_out.state_id, [4 5 6]) && sensor_data.is_right_lane_safe
+        
+        % Force lateral assist gain to 1.0 to completely override human driver
+        fsm_out.lat_assist_gain = 1.0;
+        
+        % Define maximum lateral speed in meters per second
+        lat_speed = 1.5; 
+        
+        % Gradually interpolate target_y towards the right lane (Y = -2.0)
+        % max() prevents the car from overshooting past the target lane center
+        if ego_y > -2.0
+            target_y = max(-2.0, ego_y - (lat_speed * dt));
+            target_hdg = -2.0; % Apply a slight visual rotation angle in degrees
+        else
+            target_hdg = 0; % Straighten out once arrived at the lane
+        end
+    end
+    % =====================================================================
+
     % --- on_target_lane debouncer (feeds back into FSM next step) -------
     % Reset on state change so a stale "arrived" from MRM_Plan can't
     % immediately satisfy HwyPullOver -> Stopping the moment we transition.
