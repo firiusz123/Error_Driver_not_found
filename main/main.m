@@ -4,7 +4,9 @@
 clear; close all; clc;
 disp('Initializing 3D baseline environment...');
 
-[scenario, tempVar] = env_sim();
+[scenario, tempVar, camera1, rader_rear_right, radar_rear_left, radar_right] = env_sim();
+my_radars = {radar1, radar2, radar3};
+
 % Safely extract the scenario object
 if isa(tempVar, 'drivingScenario')
     scenario = tempVar;
@@ -35,12 +37,12 @@ disp('Starting simple driving loop...');
 
 % Loop until the scenario reaches its end time
 while advance(scenario)
+    sensor_data = get_sensor_data(egoVehicle, my_radars, camera1, sim_time);
     
     % --- KINEMATIC OVERRIDE ---
     % Ask the 'Brain' (planner) for the coordinates at this exact fraction of a second
     if ~isDone(planner)
         [pos, orient, vel] = planner();
-        
         % Safety check: Only apply coordinates if they are valid numbers
         if all(isfinite(pos))
             % Manually push the coordinates to the car in the Driving Scenario
@@ -52,6 +54,20 @@ while advance(scenario)
             egoVehicle.Yaw = angles(1);
         end
     end
+    
+
+    if driver_fainted 
+        if sensor_data.is_right_lane_safe
+            if sensor_data.is_shoulder_detected
+                 % Zjazd do zera
+            else
+                 % Zmiana na prawy pas (bo to normalny pas)
+            end
+        else
+        % Hamuj na obecnym pasie
+        end
+    end
+
     
     % Force the graphics engine to render the frame at a limited rate
     drawnow limitrate;
