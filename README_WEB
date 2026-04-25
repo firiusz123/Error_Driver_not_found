@@ -1,0 +1,44 @@
+# VASC — Driver Drowsiness Detection
+
+Real-time drowsiness detection using a laptop webcam and a Vision Transformer (ViT) neural network. Built in MATLAB R2025b.
+
+## Requirements
+
+- MATLAB R2025b
+- Deep Learning Toolbox
+- MATLAB Support Package for USB Webcams
+- Python 3.14 with `onnx` and `onnxruntime` installed
+
+## Setup — Run Once
+
+### 1. Merge the model files (Python)
+```cmd
+python merge_model.py
+```
+
+### 2. Convert to MATLAB format
+Open MATLAB and run:
+```matlab
+cd('path\to\this\folder')
+run('convert_model.m')
+```
+This creates `drowsiness_net.mat`.
+
+## Run
+
+```matlab
+cd('path\to\this\folder')
+run('VASC_simu_code.m')
+```
+
+Press **Q** in the figure window to stop.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `VASC_simu_code.m` | Main detection loop |
+| `convert_model.m` | Converts ONNX model to MATLAB format |
+| `merge_model.py` | Merges model files before conversion |
+| `drowsiness_model.onnx` | Model architecture |
+| `drowsiness_model.onnx.data` | Model weights |
