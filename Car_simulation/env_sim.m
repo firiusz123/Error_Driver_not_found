@@ -1,4 +1,4 @@
-function [allData, scenario, sensors] = generateSensorData()
+function [scenario, egoVehicle, camera1, radar_RR, radar_RL, radar_R] = env_sim()
 %generateSensorData - Returns sensor detections
 %    allData = generateSensorData returns sensor detections in a structure
 %    with time for an internally defined scenario and sensor suite.
@@ -14,6 +14,10 @@ function [allData, scenario, sensors] = generateSensorData()
 
 % Create all the sensors
 [sensors, numSensors] = createSensors(scenario);
+camera1 = sensors{1};   % visionDetectionGenerator
+radar_RR = sensors{2};  % Rear Right
+radar_RL = sensors{3};  % Rear Left
+radar_R = sensors{4};   % Right side radar
 
 % Add sensors to scenario
 addSensors(scenario, sensors, egoVehicle.ActorID);
@@ -79,10 +83,10 @@ if any(isValidTime) || any(isValidLaneTime) || any(isValidPointCloudTime) || any
         'INSMeasurements',   {insMeas});
 end
 
-% Release all the sensor objects so they can be used again.
-for sensorIndex = 1:numSensors
-    release(sensors{sensorIndex});
-end
+% % Release all the sensor objects so they can be used again.
+% for sensorIndex = 1:numSensors
+%     release(sensors{sensorIndex});
+% end
 
 %%%%%%%%%%%%%%%%%%%%
 % Helper functions %

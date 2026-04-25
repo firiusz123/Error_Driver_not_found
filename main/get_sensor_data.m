@@ -1,44 +1,44 @@
 function sensor_data = get_sensor_data(egoVehicle, radars_list, camera_sensor, sim_time)
     % =====================================================================
-    % FULL PERCEPTION MODULE (Radars + Camera Lane Detection)
+    % FULL PERCEPTION MODULE (Fixed Output Indexing)
     % =====================================================================
     
-    % 1. INITIALIZE OUTPUT STRUCTURE
     sensor_data = struct();
     sensor_data.is_right_lane_safe = true;           
-    sensor_data.is_shoulder_detected = false; % Default assumption: no shoulder
+    sensor_data.is_shoulder_detected = false; 
     sensor_data.closest_threat_dist = inf;
 
     % ---------------------------------------------------------------------
     % PART 1: CAMERA VISION (SHOULDER DETECTION)
     % ---------------------------------------------------------------------
     if ~isempty(camera_sensor)
-        % To feed the camera, we must first extract the mathematical "ground truth" 
-        % of the road from the scenario, up to 40 meters ahead.
-        ground_truth_lanes = laneBoundaries(egoVehicle, 'XDistance', linspace(0, 40, 40));
+        % Create ground truth for the camera (50m ahead)
+        ground_truth_lanes = laneBoundaries(egoVehicle, 'XDistance', linspace(0, 50, 51));
         
-        % We also need target poses (even if we ignore objects from camera here)
-        targets = targetPoses(egoVehicle);
+        % FIX: Camera in 'Lanes only' mode returns exactly 2 outputs:
+        % [detections, isValidTime]
+        [lane_dets, ~] = camera_sensor(ground_truth_lanes, sim_time);
         
-        % Step the camera. It returns objects (which we ignore using '~') and lanes.
-        [~, ~, lane_dets, num_lanes] = camera_sensor(targets, ground_truth_lanes, sim_time);
+        % Check how many lanes we ACTUALLY detected using length()
+        num_actual_lanes = length(lane_dets);
         
-        % Algorithm to find the immediate right lane line
         right_line_offset = -inf;
         right_line_type = 'Unmarked';
         
-        % Loop through all detected lines
-        for i = 1:num_lanes
-            offset = lane_dets(i).LateralOffset;
-            
-            % If the line is to our right (offset < 0) and is the closest one
-            if offset < 0 && offset > right_line_offset
-                right_line_offset = offset;
-                right_line_type = lane_dets(i).BoundaryType;
+        for i = 1:num_actual_lanes
+            % Failsafe: check if the field exists before accessing
+            if isfield(lane_dets(i), 'LateralOffset') || isprop(lane_dets(i), 'LateralOffset')
+                offset = lane_dets(i).LateralOffset;
+                
+                % Find the closest line on the right side (negative Y)
+                if offset < 0 && offset > right_line_offset
+                    right_line_offset = offset;
+                    right_line_type = lane_dets(i).BoundaryType;
+                end
             end
         end
         
-        % Check if the closest right line is Solid (indicating a shoulder)
+        % If the closest right boundary is a solid line -> it's a shoulder
         if strcmp(right_line_type, 'Solid')
             sensor_data.is_shoulder_detected = true;
         end
@@ -49,42 +49,39 @@ function sensor_data = get_sensor_data(egoVehicle, radars_list, camera_sensor, s
     % ---------------------------------------------------------------------
     targets = targetPoses(egoVehicle);
     if isempty(targets)
-        return; % Road is completely empty
+        return; 
     end
 
-    % Logic Parameters for 3-meter lanes
-    right_lane_y_min = -4.6;  
-    right_lane_y_max = -1.4;  
+    % Your Lane Specs: Ego is at Y=1.5. Right lane is at Y = [-2, 1.5]
+    right_lane_y_min = -3.5; % Adjusted for 3.5m lanes
+    right_lane_y_max = 0.5;  
     safe_ttc_threshold = 4.0; 
-    critical_bubble_radius = 2.0; % Absolute 2-meter dead zone
+    critical_bubble_radius = 2.0; 
 
     for r = 1:length(radars_list)
-        [detections, numDets] = radars_list{r}(targets, sim_time);
+        [detections, ~] = radars_list{r}(targets, sim_time);
+        numDets = length(detections);
 
         for i = 1:numDets
             meas = detections{i}.Measurement;
-            X = meas(1);  
-            Y = meas(2);  
-            Vx = meas(4); 
+            X = meas(1); Y = meas(2); Vx = meas(4); 
             
-            % RULE 1: THE CRITICAL 2-METER BUBBLE
-            true_distance = sqrt(X^2 + Y^2);
-            if true_distance < critical_bubble_radius
+            % Euclidean distance for the 2m bubble
+            true_dist = sqrt(X^2 + Y^2);
+            if true_dist < critical_bubble_radius
                 sensor_data.is_right_lane_safe = false;
-                if true_distance < sensor_data.closest_threat_dist
-                    sensor_data.closest_threat_dist = true_distance;
+                if true_dist < sensor_data.closest_threat_dist
+                    sensor_data.closest_threat_dist = true_dist;
                 end
                 continue; 
             end
             
-            % RULE 2: RIGHT LANE GAP ACCEPTANCE
+            % Right lane check
             if Y >= right_lane_y_min && Y <= right_lane_y_max
                 if abs(X) < sensor_data.closest_threat_dist
                     sensor_data.closest_threat_dist = abs(X);
                 end
-                
-                % If vehicle is behind us and catching up
-                if X < 0 && Vx > 0
+                if X < 0 && Vx > 0 % Dogania nas
                     ttc = abs(X) / Vx;
                     if ttc < safe_ttc_threshold
                         sensor_data.is_right_lane_safe = false;
