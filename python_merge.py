@@ -1,8 +1,8 @@
 import onnx, os
 
-folder = r'C:\Users\Flippy\Documents\AGH\VASC Hackathon'
-src    = os.path.join(folder, 'drowsiness_model.onnx')
-dst    = os.path.join(folder, 'drowsiness_merged.onnx')
+folder = r'/Users/hubertm/Documents/College/Events/VASC/Error_Driver_not_found/'
+src    = os.path.join(folder, 'drowsiness_matlab.onnx')
+dst    = os.path.join(folder, 'drowsiness_matlab_merged.onnx')
 
 print('Loading...')
 model = onnx.load(src)   # loads both .onnx and .onnx.data automatically
@@ -12,3 +12,4 @@ onnx.save(model, dst, save_as_external_data=False)
 
 print(f'Done: {dst}')
 print(f'Size: {os.path.getsize(dst)/1024/1024:.1f} MB')
+

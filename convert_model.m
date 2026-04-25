@@ -7,10 +7,8 @@
 %   - Deep Learning Toolbox Converter for ONNX Model Format
 %   - drowsiness_merged.onnx must exist (run merge_model.py first)
 
-clear; clc;
-
-PROJECT_DIR = 'C:\Users\Flippy\Documents\AGH\VASC Hackathon';
-ONNX_PATH   = fullfile(PROJECT_DIR, 'drowsiness_merged.onnx');
+PROJECT_DIR = '/Users/hubertm/Documents/College/Events/VASC/Error_Driver_not_found';
+ONNX_PATH   = fullfile(PROJECT_DIR, 'drowsiness_matlab_merged.onnx');
 SAVE_PATH   = fullfile(PROJECT_DIR, 'drowsiness_net.mat');
 
 % ── Check merged file exists ──────────────────────────────────────────

@@ -149,7 +149,7 @@ scenario = drivingScenario;
 
 % Add all road segments
 roadCenters = [0 0 0;
-    340 0 0];
+    600 0 0];
 marking = [laneMarking('Solid', 'Color', [0.98 0.86 0.36])
     laneMarking('Dashed')
     laneMarking('Dashed')
@@ -174,17 +174,17 @@ egoVehicle = vehicle(scenario, ...
 % Tworzymy nowy obiekt pojazdu na prawym pasie (Y = -2.0).
 % Zaczyna 60 metrów za EgoVehicle, aby przy różnicy prędkości 10 m/s 
 % zrównać się z nim dokładnie po 6 sekundach.
-targetVehicle = vehicle(scenario, ...
-    'ClassID', 1, ...
-    'Position', [-60 -2.0 0], ...
-    'Mesh', driving.scenario.carMesh, ...
-    'PlotColor', [221 38 38] / 255, ... % Czerwony kolor dla odróżnienia
-    'Name', 'TargetVehicle');
+% targetVehicle = vehicle(scenario, ...
+%     'ClassID', 1, ...
+%     'Position', [-60 -2.0 0], ...
+%     'Mesh', driving.scenario.carMesh, ...
+%     'PlotColor', [221 38 38] / 255, ... % Czerwony kolor dla odróżnienia
+%     'Name', 'TargetVehicle');
 
 % Definiujemy trajektorię dla TargetVehicle.
 % Komenda 'trajectory' przypisuje pojazdowi trasę (od X=-60 do X=400) 
 % i wymusza stałą prędkość 25 m/s.
-trajectory(targetVehicle, [-60 -2.0 0; 400 -2.0 0], 25);
+% trajectory(targetVehicle, [-60 -2.0 0; 400 -2.0 0], 25);
 end
 
 function output = getDetectorOutput(sensor)

@@ -30,15 +30,13 @@
 %   [c]  press  cancel button -> from any MRM substate back to DFC
 %   [w]  hold   force incapacitated_flag false (driver "wakes up")
 % =========================================================================
-
-clear; close all; clc;
 disp('Initializing environment...');
 
 % --- Environment / sensors ------------------------------------------------
 [scenario, egoVehicle, camera1, radar_RR, radar_RL, radar_R] = env_sim();
 my_radars = {radar_RR, radar_RL, radar_R};
 sim_sample_rate = 1 / scenario.SampleTime;
-scenario.StopTime = 30;
+scenario.StopTime = 40;
 dt = scenario.SampleTime;
 
 % --- Road geometry constants (from env_sim lanespec) ---------------------
@@ -63,6 +61,22 @@ otl_sustained = false;             % on_target_lane (debounced)
 prev_state_id = uint8(1);          % to reset otl_t_in on FSM state change
 driver_lane_y = egoVehicle.Position(2);  % latched while gain ≈ 0
 
+% --- DMS (driver monitoring) hysteresis ----------------------------------
+% Schmitt-trigger on drowsy_p: HIGH/LOW thresholds with hold-time on each.
+% Reason: PERCLOS-style classifier output is noisy frame-to-frame; we want
+% incapacitated_flag to bounce only when the model is *sustained* in either
+% direction. Numbers below mirror the suggestion in states/REAMDE.md
+% ("migrate to dms_confidence with hysteresis at the chart boundary").
+DMS_HIGH      = 0.7;     % set incapacitated when drowsy_p above this for...
+DMS_HIGH_HOLD = 1.0;     % ...this many seconds
+DMS_LOW       = 0.3;     % clear incapacitated when drowsy_p below this for...
+DMS_LOW_HOLD  = 0.5;     % ...this many seconds
+incap_high_t  = 0;
+incap_low_t   = 0;
+incap_state   = false;
+
+dms = dms_init();
+dms.enabled = false;  % set false to disable webcam/DMS and use scripted fallback
 % --- Visualization + keyboard driver-mock --------------------------------
 hFig = figure( ...
     'Name', 'ADAS Emergency Takeover', 'Color', 'w', ...
@@ -76,6 +90,29 @@ hStatus = annotation('textbox', [0.05 0.90 0.9 0.07], ...
     'FontWeight', 'bold', 'Color', [0 0.5 0], 'BackgroundColor', 'w');
 setappdata(hFig, 'driver', struct( ...
     'torque', 0, 'cancel_button', false, 'incap_override', false));
+
+% --- Webcam preview window (DMS feed shown in parallel) ------------------
+% Size placeholder to actual webcam resolution so axes XLim/YLim aren't
+% locked to a smaller box (cropping the real frame on first CData write).
+hCamFig = []; hCamImg = []; hCamAx = []; hCamTitle = [];
+if dms.enabled
+    res = sscanf(dms.cam.Resolution, '%dx%d');
+    if numel(res) == 2, camW = res(1); camH = res(2);
+    else,               camW = 640;    camH = 480;
+    end
+    hCamFig = figure('Name', 'DMS Camera', 'Color', 'k', ...
+        'Position', [100 500 camW camH+40], ...
+        'MenuBar', 'none', 'ToolBar', 'none');
+    hCamAx = axes('Parent', hCamFig, 'Units', 'normalized', ...
+        'Position', [0 0.06 1 0.94]);
+    hCamImg = image(zeros(camH, camW, 3, 'uint8'), 'Parent', hCamAx);
+    axis(hCamAx, 'image'); axis(hCamAx, 'off');
+    hCamTitle = annotation(hCamFig, 'textbox', [0 0 1 0.06], ...
+        'String', 'DMS: waiting for first frame...', 'EdgeColor', 'none', ...
+        'HorizontalAlignment', 'center', 'Color', 'w', ...
+        'BackgroundColor', 'k', 'FontWeight', 'bold');
+    figure(hFig);  % keep keyboard focus on the sim window
+end
 
 disp('Loop start. Keys: [s]=torque  [c]=cancel  [w]=wake-override');
 tic;
@@ -92,10 +129,44 @@ while advance(scenario)
 
     % --- Driver-model mocks ---------------------------------------------
     driver = getappdata(hFig, 'driver');
-    % TODO: Integrate with the visual model
-    % Scripted incapacitation window 4..25 s. 'w' key forces it false.
-    incapacitated_flag = (sim_time >= 4.0 && sim_time < 25.0) && ...
-                         ~driver.incap_override;
+
+    % --- DMS step: webcam capture + ViT inference (4 Hz, rate-limited) --
+    dms = dms_step(dms, sim_time);
+
+    % --- DMS camera preview --------------------------------------------
+    if ~isempty(hCamImg) && ishandle(hCamImg) && ~isempty(dms.last_frame)
+        f = dms.last_frame;
+        set(hCamImg, 'CData', f);
+        set(hCamAx, 'XLim', [0.5, size(f,2)+0.5], ...
+                    'YLim', [0.5, size(f,1)+0.5]);
+        set(hCamTitle, 'String', sprintf('DMS  drowsy_p=%.2f  incap=%d', ...
+            dms.drowsy_p, incap_state));
+    end
+
+    % Schmitt-trigger hysteresis on drowsy_p → incap_state.
+    % Deadband [DMS_LOW, DMS_HIGH] holds current state and resets timers.
+    if dms.enabled
+        if dms.drowsy_p >= DMS_HIGH
+            incap_high_t = incap_high_t + dt;
+            incap_low_t  = 0;
+        elseif dms.drowsy_p <= DMS_LOW
+            incap_low_t  = incap_low_t + dt;
+            incap_high_t = 0;
+        else
+            incap_high_t = 0;
+            incap_low_t  = 0;
+        end
+        if incap_high_t >= DMS_HIGH_HOLD
+            incap_state = true;
+        elseif incap_low_t >= DMS_LOW_HOLD
+            incap_state = false;
+        end
+        incapacitated_flag = incap_state && ~driver.incap_override;
+    else
+        % Scripted fallback when webcam/network unavailable.
+        incapacitated_flag = (sim_time >= 2.0 && sim_time < 30.0) && ...
+                             ~driver.incap_override;
+    end
 
     % --- Build FSM inputs -----------------------------------------------
     ego_x = egoVehicle.Position(1);

@@ -50,8 +50,13 @@ function [target_y, target_heading, target_v, hazard_lights, planner_feasible, a
     % lane-change makes the next boundary visible to the camera, so the
     % NEXT re-latch picks a new midpoint that hops one lane further right.
     relatch_phase = mrm_enable && fsm_state == 4 && phase_complete;
+    % Re-latch when right-adjacent lane clears. Without this, a car
+    % approaching at MRM entry latches locked_safe=false for the whole
+    % phase and the ego stops in its current lane.
+    relatch_safe = mrm_enable && any(fsm_state == [4 5]) && ...
+                   ~locked_safe && is_lane_safe;
 
-    if rising_edge || state_changed || relatch_phase
+    if rising_edge || state_changed || relatch_phase || relatch_safe
         start_x         = ego_x;
         start_y         = ego_y;
         initial_v       = ego_v;
@@ -96,9 +101,17 @@ function [target_y, target_heading, target_v, hazard_lights, planner_feasible, a
                 phase_complete = true;
             end
         else
+            % Right lane blocked or planner infeasible: hold current lane,
+            % keep cruising at entry speed, wait for relatch_safe to fire.
+            % Never set arrived here — would otherwise advance the FSM
+            % into STOPPING in the wrong lane.
             target_y       = start_y;
             target_heading = 0;
-            target_v       = 0;
+            if locked_feasible
+                target_v = initial_v;
+            else
+                target_v = 0;
+            end
         end
 
         if (initial_v - ego_v) > 5.0 || ~locked_safe || ~locked_feasible
@@ -122,8 +135,12 @@ function y_offset = pick_target_offset(offsets, road_class, fsm_state)
 
     if road_class == 0  % motorway
         switch fsm_state
-        case {4, 5}  % MRM_Plan or MRM_HighwayPullOver -> next-right midpoint
-            neg = sort(offsets(offsets < 0), 'descend');
+        case {4, 5}  % MRM_Plan / MRM_HighwayPullOver -> rightmost-lane midpoint
+            % Pick the two MOST-negative boundaries (= the rightmost lane).
+            % When shoulder markings are visible this lands on the shoulder
+            % center; otherwise it lands on the rightmost driving lane.
+            % One S-curve carries the ego all the way over.
+            neg = sort(offsets(offsets < 0), 'ascend');  % most negative first
             if numel(neg) >= 2
                 y_offset = (neg(1) + neg(2)) / 2;
             elseif numel(neg) == 1

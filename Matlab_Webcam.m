@@ -13,10 +13,8 @@
 %   Q  — quit
 % =========================================================================
 
-clear; close all; clc;
-
 % ── CONFIGURATION — edit if your folder is different ─────────────────
-PROJECT_DIR = 'C:\Users\Flippy\Documents\AGH\VASC Hackathon';
+PROJECT_DIR = '/Users/hubertm/Documents/College/Events/VASC/Error_Driver_not_found';
 NET_PATH    = fullfile(PROJECT_DIR, 'drowsiness_net.mat');
 
 % ImageNet normalisation constants (ViT was trained with these)
@@ -47,7 +45,6 @@ if isempty(webcamlist())
 end
 
 cam = webcam(1);
-cam.Resolution = '1280x720';
 try, cam.Brightness = 0;   catch, end
 try, cam.Contrast   = 128; catch, end
 try, cam.Saturation = 128; catch, end
@@ -216,7 +213,7 @@ while ishandle(fig) && ~getappdata(fig, 'stop')
     xlabel(ax_hist, 'Frames',    'Color', 'w');
 
     % 5h. Console output every 30 frames
-    if mod(frameCount, 30) == 0
+    if mod(frameCount, 10) == 0
         fprintf('%-6d  %-24s  %-10.3f  %-10.3f\n', ...
                 frameCount, sLabel, awake_p, drowsy_p);
     end
