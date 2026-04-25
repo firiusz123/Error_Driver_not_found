@@ -14,3 +14,5 @@ __pycache__/
 +*
 .*
 *.mat
+/MATTEST
+/ML/scripts/__pycache__
