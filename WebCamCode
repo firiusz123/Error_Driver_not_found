@@ -1,0 +1,26 @@
+%Download MATLAB Support Package for USB Webcams
+webcamlist
+% Connect to the first (and usually only) webcam
+cam = webcam(1);
+
+% Or by name if you have multiple cameras:
+% cam = webcam('Integrated Webcam');
+
+% See available cameras at any time:
+webcamlist
+preview(cam)
+img = snapshot(cam);
+
+% Display it
+imshow(img)
+title('Webcam snapshot')
+% See all available properties
+cam
+
+% Set resolution (check what resolutions your camera supports)
+cam.Resolution = '1280x720';   % common options: '320x240', '640x480', '1280x720'
+
+
+% Take another snapshot at the new resolution
+img = snapshot(cam);
+disp(size(img))   % should show [480 640 3]
