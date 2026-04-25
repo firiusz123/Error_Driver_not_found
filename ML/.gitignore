@@ -1,0 +1,10 @@
+/data
+/env
+/.venv313
+/models
+.codex
+.python-version
+
+# Model artifacts (too large / generated)
+*.onnx
+*.onnx.data
